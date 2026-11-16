@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="uk"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Виробництво</title>
+<link rel="manifest" href="manifest.json"><meta name="theme-color" content="#0b6e8a">
+<link rel="apple-touch-icon" href="icon-192.png"><meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{--ink:#1b2430;--bg:#eef1f4;--card:#fff;--ac:#0b6e8a;--wn:#b45309;--ok:#15803d;--ln:#d5dbe1}
+*{box-sizing:border-box}body{margin:0;font:16px/1.4 system-ui,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+header{position:sticky;top:0;background:var(--ac);color:#fff;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;display:flex;gap:6px;flex-wrap:wrap;z-index:5}
+header select,header input{flex:1;min-width:0;font:inherit;padding:8px;border:0;border-radius:8px}
+main{padding:12px;max-width:720px;margin:auto}
+nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--ln);display:flex;overflow-x:auto;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1 0 auto;border:0;background:none;padding:14px 12px;font:inherit;font-size:14px;color:#566;white-space:nowrap}
+nav button.on{color:var(--ac);font-weight:700;box-shadow:inset 0 3px var(--ac)}
+.c{background:var(--card);border:1px solid var(--ln);border-radius:10px;padding:12px;margin-bottom:10px}
+.s{color:#566;font-size:14px}.g{display:flex;gap:14px;flex-wrap:wrap;margin-top:6px}.w{color:var(--wn)}.ok{color:var(--ok)}
+.r{display:flex;gap:8px;margin-top:8px}
+button,.btn{font:inherit;padding:12px 14px;border:1px solid var(--ln);background:#fff;border-radius:10px;color:var(--ink)}
+button.pri{background:var(--ac);color:#fff;border:0;width:100%;margin-top:8px;font-weight:600}
+input,select{font:inherit}main input,main select,#m input{padding:11px;border:1px solid var(--ln);border-radius:8px;width:100%;margin:4px 0}
+.bar{height:8px;background:var(--ln);border-radius:4px;overflow:hidden;margin-top:8px}.bar i{display:block;height:100%;background:var(--ok)}
+#m{position:fixed;inset:0;background:#0007;display:none;align-items:flex-end;z-index:9}#m.on{display:flex}
+#m>div{background:#fff;width:100%;max-width:720px;margin:auto;border-radius:16px 16px 0 0;padding:16px;max-height:85vh;overflow:auto}
+.mr{display:flex;align-items:center;justify-content:space-between;gap:10px}.mr input{width:110px!important}
+h3{margin:4px 0 8px}.e{text-align:center;color:#566;padding:24px}.chk{display:inline-flex;align-items:center;gap:4px;margin-right:10px}.chk input{width:auto!important}
+</style></head><body>
+<header id="top"></header><main id="v"></main><nav id="nav"></nav><div id="m"><div id="mb"></div></div>
+<input type="file" id="fbk" accept=".json" hidden>
+<script>
+let WS=['Стандарт','Металу','Складання'];const ROLE={brig:'Бригадир',master:'Майстер'},K='mebli_v1';
+const T={home:'Головна',dist:'Заплановано',fact:'Виробництво',rep:'Звіти',hist:'Історія',set:'Налаштування'};
+const TABS={brig:['dist','fact','rep','set'],master:['home']};
+// ДАНІ: зараз localStorage (лише прототип). Для етапу 2 замінити load/save на запити до сервера.
+const DEFAULT_SERVER='https://script.google.com/macros/s/AKfycbwVGwFOtTBCftnyG3r2ijDB4R5lyKcYPvOYozAw7PXVA_OU9Sfn_zl5DaWWbxqTc-oc2A/exec'; // ← вставте сюди посилання на скрипт (…/exec), тоді воно буде на всіх телефонах одразу
+const SRC={ // Google Таблиці (доступ: «усім, у кого є посилання» — Читач)
+ ref:{id:'1xJAejvM4HHMqfeja9SjbKrCN_MiZFjqhMpVLCAdlBf8',ws:'Цехи',masters:'Майстри'}, // Довідник: вкладки «Цехи» і «Майстри»
+ plan:{id:'1sdmtfqTQPTwymuy0VPmyDHWtz9jhHcII9KhJPqFu8GI',gid:0}, // Список у роботу (план)
+ alloc:{id:'1-e4pbCi01HnGEpN36ioBQ_s6G1lzwq5nqjbXzXPpDXc',gid:0}}; // Розподіл по майстрах, вкладка «Розподіл»
+const INIT_PW='777'; // початковий пароль бригадира, поки на пристрої немає пароля, підтвердженого сервером
+let S=JSON.parse(localStorage.getItem(K)||'null')||{cat:[],masters:[],plan:[],alloc:{},fact:[],log:[],closed:{}};
+const save=()=>localStorage.setItem(K,JSON.stringify(S));
+if(S.wsNames)WS=S.wsNames;
+if(!S.server&&DEFAULT_SERVER)S.server=DEFAULT_SERVER;
+const $=s=>document.querySelector(s),id=()=>Math.random().toString(36).slice(2,10);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const iso=d=>new Date(d.getTime()-d.getTimezoneOffset()*6e4).toISOString().slice(0,10);
+const addDay=(d,n)=>{const x=new Date(d+'T12:00');x.setDate(x.getDate()+n);return iso(x)};
+const nwd=d=>{let x=addDay(d,1);while([0,6].includes(new Date(x+'T12:00').getDay()))x=addDay(x,1);return x};
+const disp=k=>k.replace(/\|$/,'').replace('|',' · '),sum=o=>Object.values(o||{}).reduce((a,b)=>a+b,0);
+const U={tab:'home',date:iso(new Date()),ws:0,role:'master',master:'',rp:'week'};
+const lg=t=>{S.log.push({t:Date.now(),r:ROLE[U.role],x:t});save()};
+const rows=()=>S.plan.filter(p=>p.date==U.date&&p.ws==U.ws);
+const closed=()=>!!S.closed[U.date+'|'+U.ws];
+function calc(p){const un=new Set((S.out||[]).map(o=>o.id)),f=S.fact.filter(x=>x.pid==p.id&&un.has(x.id)).reduce((a,x)=>a+x.qty,0)+(p.sdone||0);
+ const target=p.qty,rem=Math.max(0,target-f);return{al:sum(AL(p)),target,done:f,rem,over:Math.max(0,f-target),lim:p.date<U.date?rem:target}}
+function demo(){const n=['Стіл LONG','Стіл LONG maxi 3,0 м','Стіл ELIPS slide 1300(1700)x750x850','Стіл Ronni slide 1100(1500)x750x750','Стіл OSCAR slide D900','Комод LOFT 1200'];
+ S.cat=n.map(x=>({k:x+'|'}));S.masters=[['Іваненко',[0,1]],['Петренко',[0]],['Коваленко',[0,2]],['Шевченко',[2]],['Мельник',[1]]].map(([name,ws])=>({id:id(),name,ws}));
+ const t=iso(new Date()),y=nwd(t);[[t,0,0,100],[t,0,2,12],[t,1,4,6],[t,2,5,8],[y,0,0,10],[y,0,3,5]].forEach(([d,w,i,q])=>S.plan.push({id:id(),date:d,ws:w,item:S.cat[i].k,qty:q}));S.plan.filter(p=>p.ws==2).forEach(p=>{p.order='МР000007315 · 00085467';p.char='Бетонний Камінь / Чорний мат'});save()}
+const card=(p,m)=>{const c=calc(p),a=AL(p),nm=Object.keys(a).map(k=>{const x=S.masters.find(z=>z.id==k);return x?x.name+' '+a[k]:''}).join(', ');
+ return`<div class="c" ${m=='d'?`data-act="alloc" data-id="${p.id}" style="cursor:pointer"`:''}><b>${esc(disp(p.item))}</b>${sub(p)}
+ <div class="s">План ${p.qty}${p.carry?` + перенос ${p.carry}`:''}${p.credit?` · зараховано з учора ${p.credit}`:''}</div>
+ <div class="g"><span>Розподілено <b class="${c.al<c.lim?'w':''}">${c.al}</b>/${c.lim}</span><span>Зроблено <b>${c.done}</b></span><span class="${c.rem?'w':'ok'}">Залишок <b>${c.rem}</b></span>${c.over?`<span class="ok">Перевиконання +${c.over}</span>`:''}</div>
+ ${m=='d'&&nm?`<div class="s">${esc(nm)}</div>`:''}
+ ${m=='p'&&U.role=='boss'?`<div class="r"><button data-act="eq" data-id="${p.id}">Змінити кількість</button><button data-act="del" data-id="${p.id}">Видалити</button></div>`:''}</div>`};
+const wk=d=>{const g=(new Date(d+'T12:00').getDay()+6)%7;return[addDay(d,-g),addDay(d,6-g)]};
+const per=()=>{const d=U.date;return U.rp=='day'?[d,d]:U.rp=='week'?wk(d):[d.slice(0,8)+'01',iso(new Date(+d.slice(0,4),+d.slice(5,7),0))]};
+const dv=(f,p)=>{const d=f-p;return`<b class="${d<0?'w':'ok'}">${d>0?'+':''}${d}</b>`};
+const SW=()=>[U.ws].map(i=>{const w=WS[i];const r=S.plan.filter(p=>p.date==U.date&&p.ws==i).map(calc),t=sum(r.map(x=>x.target)),d=sum(r.map(x=>Math.min(x.done,x.target))),rem=sum(r.map(x=>x.rem)),ov=sum(r.map(x=>x.over));
+  return`<div class="c"><b>Цех ${w}</b>${S.closed[U.date+'|'+i]?' <span class="s">(день закрито)</span>':''}<div class="g"><span>План <b>${t}</b></span><span>Факт <b>${d}</b></span><span class="${rem?'w':'ok'}">Залишок <b>${rem}</b></span>${ov?`<span class="ok">+${ov}</span>`:''}</div><div class="bar"><i style="width:${t?Math.round(d/t*100):0}%"></i></div></div>`}).join('');
+let RT='';
+const AL=p=>p.date>=U.date||(S.adate||{})[p.id]==U.date?(S.alloc[p.id]||{}):{};
+const od=()=>S.plan.filter(p=>p.date<U.date&&p.ws==U.ws&&calc(p).rem>0).sort((a,b)=>a.date<b.date?-1:1);
+const same=(a,b)=>a.date==b.date&&a.ws==b.ws&&a.item==b.item&&(a.order||'')==(b.order||'')&&(a.char||'')==(b.char||'')&&(a.op||'')==(b.op||'');
+const sub=p=>{const a=[p.date<U.date&&'Прострочено з '+p.date,p.op,p.order&&'Замовлення '+p.order,p.char].filter(Boolean);return a.length?`<div class="s" style="font-size:12px">${esc(a.join(' · '))}</div>`:''};
+const V={
+rep(){const[a,b]=per(),W=U.role=='brig'?[U.ws]:WS.map((_,i)=>i),m={},dy={},ms={},ip=d=>d>=a&&d<=b,D=d=>dy[d]=dy[d]||{p:0,f:0},M=(w,i)=>m[w+'|'+i]=m[w+'|'+i]||{ws:w,item:i,p:0,f:0};
+ S.plan.filter(p=>ip(p.date)&&W.includes(p.ws)).forEach(p=>{const r=M(p.ws,p.item),c=p.credit||0;r.p+=p.qty;r.f+=c;D(p.date).p+=p.qty;D(p.date).f+=c;Object.entries(S.alloc[p.id]||{}).forEach(([i,q])=>(ms[i]=ms[i]||{a:0,f:0}).a+=q)});
+ S.fact.filter(x=>ip(x.date)&&W.includes(x.ws)).forEach(x=>{const n=x.qty-(x.next||0);M(x.ws,x.item).f+=n;D(x.date).f+=n;(ms[x.master||'-']=ms[x.master||'-']||{a:0,f:0}).f+=n});
+ const L=Object.values(m).sort((x,y)=>(x.f-x.p)-(y.f-y.p)),pc=(f,p)=>p?Math.round(f/p*100)+'%':'—';
+ const P=(x,y)=>y?Math.round(x/y*100):0,ln=(p,f)=>p?`заплановано ${p}, зроблено ${f} (${P(Math.min(f,p),p)}%)${f<p?`, не зроблено ${p-f} (${P(p-f,p)}%)`:''}${f>p?`, перевиконання +${f-p}`:''}`:`поза планом, зроблено ${f}`;
+ RT=`ЗВІТ ПО ВИРОБНИЦТВУ\n${a}${a==b?'':' — '+b}\n`+W.map(w=>{const l=L.filter(x=>x.ws==w);return`\nЦех ${WS[w]}: ${ln(sum(l.map(x=>x.p)),sum(l.map(x=>x.f)))}\n`+l.map(x=>`• ${disp(x.item)}: ${ln(x.p,x.f)}`).join('\n')}).join('\n')+'\n\nМайстри (розподілено / зроблено):\n'+Object.entries(ms).map(([i,q])=>`• ${i=='-'?'Без майстра':(S.masters.find(z=>z.id==i)||{name:'—'}).name}: ${q.a} / ${q.f}`).join('\n');
+ return`<div class="r"><button data-act="goto" data-id="dist" style="flex:1">← До заявок</button><button data-act="share" style="flex:1">Поділитися</button></div><div class="r" style="margin:8px 0 10px">${[['day','День'],['week','Тиждень'],['month','Місяць']].map(([k,t])=>`<button data-act="rp" data-id="${k}" class="${U.rp==k?'pri':''}" style="flex:1;margin:0;width:auto">${t}</button>`).join('')}</div><p class="s">Період: ${a}${a==b?'':' — '+b}${U.role=='brig'?' · цех '+WS[U.ws]:''}</p>`+
+ W.map(w=>{const l=L.filter(x=>x.ws==w),p=sum(l.map(x=>x.p)),f=sum(l.map(x=>x.f)),o=sum(l.map(x=>Math.max(0,x.f-x.p))),u=sum(l.map(x=>Math.max(0,x.p-x.f)));
+  return`<div class="c"><b>Цех ${WS[w]}</b><div class="g"><span>План <b>${p}</b></span><span>Факт <b>${f}</b></span><span>Виконання <b>${pc(f,p)}</b></span></div><div class="g"><span class="ok">Перевиконання <b>${o}</b></span><span class="w">Недовиконання <b>${u}</b></span></div><div class="bar"><i style="width:${Math.min(100,p?f/p*100:0)}%"></i></div></div>`}).join('')+
+ `<h3>За номенклатурою</h3>`+(L.length?L.map(x=>`<div class="c"><b>${esc(disp(x.item))}</b>${W.length>1?` <span class="s">${WS[x.ws]}</span>`:''}<div class="g"><span>План <b>${x.p}</b></span><span>Факт <b>${x.f}</b></span><span>${dv(x.f,x.p)}</span>${x.p?'':'<span class="s">поза планом</span>'}</div></div>`).join(''):'<div class="e">За цей період даних немає</div>')+
+ `<h3>За днями</h3>`+Object.keys(dy).sort().map(d=>`<div class="c mr"><span>${d}</span><span>План <b>${dy[d].p}</b> · Факт <b>${dy[d].f}</b> ${dv(dy[d].f,dy[d].p)}</span></div>`).join('')+
+ `<h3>Майстри</h3>`+(Object.keys(ms).length?Object.entries(ms).sort((x,y)=>y[1].f-x[1].f).map(([i,q])=>`<div class="c mr"><span>${esc(i=='-'?'Без майстра':(S.masters.find(z=>z.id==i)||{name:'—'}).name)}</span><span>Розподілено <b>${q.a}</b> · Зроблено <b>${q.f}</b></span></div>`).join(''):'<div class="e">Даних немає</div>')},
+home(){if(U.role=='master'){const rp=S.plan.filter(p=>p.date==U.date||(p.date<U.date&&calc(p).rem>0)),tot=(m,w)=>{let n=0,k=0;rp.forEach(p=>{const q=p.ws==w&&AL(p)[m];if(q){n+=q;k++}});return[n,k]};
+  if(U.master){const m=S.masters.find(x=>x.id==U.master),l=rp.filter(p=>p.ws==U.mws&&AL(p)[U.master]);
+   return`<button data-act="back">← Усі працівники</button><h3>${esc(m?m.name:'')} · цех ${WS[U.mws]} · ${U.date}</h3>`+(l.length?l.map(p=>`<div class="c"><b>${esc(disp(p.item))}</b>${sub(p)}<h3>${AL(p)[U.master]} шт</h3></div>`).join(''):'<div class="e">Завдань на цю дату немає</div>')}
+  return`<p class="s">План на ${U.date}. Оберіть цех і прізвище.</p>`+WS.map((w,i)=>{const ms=S.masters.filter(m=>m.ws.includes(i));return`<h3>Цех ${w}</h3>`+(ms.length?ms.map(m=>{const[n,k]=tot(m.id,i);return`<div class="c mr" data-act="pick" data-id="${m.id}" data-ws="${i}" style="cursor:pointer"><b>${esc(m.name)}</b><span>${n?`<b>${n} шт</b> · позицій: ${k}`:'<span class="s">завдань немає</span>'}</span></div>`}).join(''):'<div class="e">Майстрів немає</div>')}).join('')}
+ return SW()},
+plan(){const r=rows();return(U.role=='boss'?`<button class="pri" data-act="addp">+ Додати в план</button><br>`:'')+(r.length?r.map(p=>card(p,'p')).join(''):'<div class="e">На цю дату в цеху немає завдань. Імпортуйте план у Налаштуваннях.</div>')},
+dist(){const o=od(),r=rows(),L=a=>a.map(p=>card(p,'d')).join('');return SW()+'<p class="s">Натисніть на позицію, щоб розподілити між майстрами.</p>'+(o.length?`<h3 class="w">Прострочено (${o.length})</h3>`+L(o):'')+'<h3>План на сьогодні</h3>'+(r.length?L(r):'<div class="e">На сьогодні завдань немає</div>')},
+fact(){const r=od().concat(rows()),f=S.fact.filter(x=>x.date==U.date&&x.ws==U.ws),mn=i=>i?(S.masters.find(m=>m.id==i)||{name:'?'}).name:'Без майстра';
+ return(closed()?'<div class="c w">Зміну закрито, випуск змінювати не можна.</div>':'')+(r.length?r.map(p=>{const c=calc(p),a=AL(p),ks=Object.keys(a);return`<div class="c"><b>${esc(disp(p.item))}</b>${sub(p)}<div class="g"><span>До виконання <b>${c.target}</b></span><span>Зроблено <b>${c.done}</b></span><span class="${c.rem?'w':'ok'}">Залишок <b>${c.rem}</b></span></div>
+ ${ks.length?ks.map(k=>`<label class="mr">${esc(mn(k))} <span class="s">призначено ${a[k]}</span><input data-fm="${k}" type="number" inputmode="numeric" min="0" placeholder="Зроблено"></label>`).join(''):`<div class="s">Розподілу немає. Запишіть загальну кількість.</div><input data-fm="" type="number" inputmode="numeric" min="0" placeholder="Скільки зроблено">`}
+ <button class="pri" data-act="addf" data-id="${p.id}">Записати</button></div>`}).join(''):'<div class="e">На цю дату в цеху немає завдань</div>')+
+ (f.length?'<div class="s" style="margin-top:18px;font-size:11px">Записано за день</div>'+f.map(x=>`<div class="mr" style="font-size:12px;color:#566;padding:5px 0;border-bottom:1px solid var(--ln)"><span>${esc(disp(x.item))} — ${x.qty} шт · ${esc(mn(x.master))}</span><button data-act="delf" data-id="${x.id}" style="padding:2px 9px;font-size:13px">×</button></div>`).join(''):'')+(closed()?'<button data-act="reopen" style="margin-top:12px">Відкрити зміну</button>':'<button class="pri" data-act="close" style="margin-top:12px">Закрити зміну</button>')},
+hist(){return S.log.length?S.log.slice(-150).reverse().map(l=>`<div class="c"><div class="s">${new Date(l.t).toLocaleString('uk-UA')} · ${l.r}</div>${esc(l.x)}</div>`).join(''):'<div class="e">Історія порожня</div>'},
+set(){return`<div class="c"><h3>Google Таблиці</h3><div class="s">Цехи, майстри, план і розподіл читаються з Google Таблиць при запуску. Таблиці мають бути відкриті за посиланням (Читач).</div><button class="pri" data-act="sync">Оновити з таблиць</button>${['ws','masters','plan','alloc'].map(k=>`<div class="s" style="margin-top:6px">${esc((S.msg||{})[k]||'—')}</div>`).join('')}</div>
+ <div class="c"><h3>Скрипт запису</h3><div class="s">Apps Script (/exec) потрібен для відправлення випуску й розподілу в таблиці та для входу бригадира.</div><input id="sv" value="${esc(S.server||'')}" placeholder="https://script.google.com/macros/s/…/exec"><div class="s">Не відправлено записів випуску: ${(S.out||[]).length}</div></div>
+ <div class="c"><h3>Завдання</h3><div class="s">Видаляє план, розподіл, випуск, закриті зміни та чергу невідправлених записів. Довідник, майстри, цехи й адреса сервера залишаються. План і розподіл знову завантажаться з таблиць при наступному оновленні.</div><button style="width:100%;margin-top:8px;color:#b91c1c;border-color:#b91c1c" data-act="clr">Очистити всі завдання</button></div>
+ <div class="c"><h3>Резервна копія</h3><button class="pri" data-act="bk">Зберегти копію (JSON)</button><button style="width:100%;margin-top:8px" data-act="rs">Відновити з копії</button><button style="width:100%;margin-top:8px" data-act="dm0">Скинути до демо-даних</button></div>
+ <details class="c"><summary><b>Історія змін</b></summary>${V.hist()}</details>`}};
+function render(){const tabs=TABS[U.role];if(!tabs.includes(U.tab))U.tab=tabs[0];
+ $('#top').innerHTML=`<input type="date" id="hd" value="${U.date}">`+(U.role=='brig'?`<select id="hw">${WS.map((w,i)=>`<option value="${i}" ${i==U.ws?'selected':''}>Цех ${w}</option>`).join('')}</select><button data-act="out" style="flex:0 0 auto;padding:8px 12px">Вийти</button>`:`<button data-act="in" style="flex:0 0 auto;padding:8px 12px">Бригадир</button>`);
+ $('#nav').innerHTML=tabs.map(t=>`<button data-tab="${t}" class="${t==U.tab?'on':''}">${T[t]}</button>`).join('');$('#nav').style.display=tabs.length>1?'':'none';const bad=Object.values(S.msg||{}).filter(x=>/не оновлено/.test(x));$('#v').innerHTML=(bad.length&&U.tab!='set'?`<div class="c w"><b>Не всі дані завантажено з таблиць</b>${bad.map(x=>`<div class="s">${esc(x)}</div>`).join('')}</div>`:'')+V[U.tab]()}
+const modal=h=>{$('#mb').innerHTML=h;$('#m').classList.add('on')},shut=()=>$('#m').classList.remove('on');
+function openAlloc(i){if(closed())return alert('Зміну закрито.');const p=S.plan.find(x=>x.id==i),c=calc(p),a=AL(p),ms=S.masters.filter(m=>m.ws.includes(p.ws));
+ modal(`<h3>${esc(disp(p.item))}</h3>${sub(p)}<p>До виконання: <b>${c.lim}</b>. Розподілено: <b id="sm">${c.al}</b></p>`+(ms.length?ms.map(m=>`<label class="mr">${esc(m.name)}<input type="number" min="0" inputmode="numeric" data-m="${m.id}" value="${a[m.id]||''}"></label>`).join(''):'<p>Для цього цеху немає майстрів (Налаштування).</p>')+`<button class="pri" data-act="sa" data-id="${i}">Зберегти розподіл</button><button style="width:100%;margin-top:8px" data-act="shut">Скасувати</button>`)}
+function saveAlloc(i){const p=S.plan.find(x=>x.id==i),o={};document.querySelectorAll('#mb [data-m]').forEach(e=>{const v=+e.value;if(v>0)o[e.dataset.m]=v});
+ if(sum(o)>calc(p).lim)return alert('Розподілено більше, ніж потрібно виконати ('+calc(p).lim+').');S.alloc[i]=o;(S.adate=S.adate||{})[i]=U.date;(S.out=S.out||[]).push({a:'alloc',adate:U.date,date:p.date,ws:WS[p.ws],item:disp(p.item),char:p.char||'',order:p.order||'',op:p.op||'',rows:Object.keys(o).map(k=>({master:S.masters.find(m=>m.id==k).name,qty:o[k]}))});flush().then(save);lg('Розподіл: '+disp(p.item)+' → '+Object.keys(o).map(k=>S.masters.find(m=>m.id==k).name+' '+o[k]).join(', '));shut();render()}
+function addFact(it,q,nx,mid,pid){nx=nx||0;
+ if(closed())return alert('Зміну закрито.');if(!it)return alert('Оберіть позицію зі списку довідника — власні назви заборонені.');if(!(q>0))return alert('Вкажіть кількість.');if(nx>q)return alert('У завтрашнє завдання не може бути більше, ніж зроблено.');
+ if(nx){const t=S.plan.find(p=>p.date==nwd(U.date)&&p.ws==U.ws&&p.item==it.k);if(!t)return alert('На наступний робочий день у цьому цеху немає такого завдання.');if(nx>calc(t).rem)return alert('На наступний робочий день залишилось виконати лише '+calc(t).rem+'.');t.credit=(t.credit||0)+nx}
+ const fid=id(),pr=S.plan.find(x=>x.id==pid)||{};S.fact.push({id:fid,date:U.date,ws:U.ws,item:it.k,qty:q,next:nx,master:mid||'',pid:pid||''});(S.out=S.out||[]).push({a:'fact',id:fid,pid:pid||'',pdate:pr.date||U.date,date:U.date,ws:WS[U.ws],item:disp(it.k),order:pr.order||'',op:pr.op||'',char:pr.char||'',qty:q,master:(S.masters.find(m=>m.id==mid)||{}).name||''});flush().then(save);lg(`Випуск ${WS[U.ws]}: ${disp(it.k)}${mid?' ('+(S.masters.find(m=>m.id==mid)||{name:'?'}).name+')':''} — ${q}${nx?` (у завтра ${nx})`:''}`);render()}
+function delFact(i){const f=S.fact.find(x=>x.id==i);if(closed())return alert('Зміну закрито.');if(!confirm('Видалити запис?'))return;
+ if(f.next){const t=S.plan.find(p=>p.date==nwd(f.date)&&p.ws==f.ws&&p.item==f.item);if(t)t.credit=Math.max(0,(t.credit||0)-f.next)}
+ S.fact=S.fact.filter(x=>x.id!=i);if((S.out||[]).some(o=>o.id==i))S.out=S.out.filter(o=>o.id!=i);else{(S.out=S.out||[]).push({a:'factdel',id:'d'+i,fid:i});const pr=S.plan.find(x=>x.id==f.pid);if(pr)pr.sdone=Math.max(0,(pr.sdone||0)-f.qty)}lg('Видалено випуск: '+disp(f.item)+' — '+f.qty);render()}
+function closeDay(){const n=od().length+rows().filter(p=>calc(p).rem>0).length;if(!confirm(n?`Закрити зміну? Незавершених позицій: ${n}. Завтра вони стануть прострочкою.`:'Закрити зміну?'))return;S.closed[U.date+'|'+U.ws]=1;lg(`Зміну ${U.date} (${WS[U.ws]}) закрито, незавершено: ${n}`);render()}
+function shareRep(){const t=RT.length>3800?RT.slice(0,3800)+'…':RT;
+ if(navigator.share)return navigator.share({text:t}).catch(()=>{});
+ modal(`<h3>Поділитися звітом</h3><textarea id="rt" readonly rows="9" style="width:100%;font:13px/1.4 system-ui">${esc(t)}</textarea><button class="pri" data-act="copyrt">Скопіювати текст</button><a class="btn" style="display:block;text-align:center;margin-top:8px;text-decoration:none" target="_blank" rel="noopener" href="https://t.me/share/url?url=%20&text=${encodeURIComponent(t.slice(0,1500))}">Відкрити Telegram</a><button style="width:100%;margin-top:8px" data-act="shut">Закрити</button>`)}
+const post=async o=>(await fetch(S.server,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(o)})).json();
+async function flush(){if(!S.server)return;S.out=S.out||[];for(const f of [...S.out]){try{const j=await post({...f,pw:S.lastPw||''});if(!j.ok)break;S.out=S.out.filter(x=>x!==f);if(f.a=='fact'){const pr=S.plan.find(x=>x.id==f.pid);if(pr)pr.sdone=(pr.sdone||0)+f.qty}}catch{break}}}
+async function sync(){await loadAll();await flush();save();render()}
+const nk=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+const csv=t=>{const r=[];let w=[],c='',q=false;for(let i=0;i<t.length;i++){const h=t[i];if(q){if(h=='"'){if(t[i+1]=='"'){c+='"';i++}else q=false}else c+=h}else if(h=='"')q=true;else if(h==','){w.push(c);c=''}else if(h=='\n'||h=='\r'){if(h=='\r'&&t[i+1]=='\n')i++;w.push(c);r.push(w);w=[];c=''}else c+=h}if(c!==''||w.length){w.push(c);r.push(w)}return r};
+const cs=v=>String(v==null?'':v).trim(),num=v=>+cs(v).replace(/\s/g,'').replace(',','.'),tm=()=>new Date().toLocaleTimeString('uk-UA'),
+ mid=n=>{let h=5381;for(const c of nk(n))h=((h*33)^c.charCodeAt(0))>>>0;return'm'+h.toString(36)},
+ mg=(k,t)=>{(S.msg=S.msg||{})[k]=t},
+ why=e=>(e&&e.name=='TypeError')?'немає зв’язку або таблиця закрита для читання':(e&&e.message)||'помилка',
+ pdate=v=>{const s=cs(v);let m=s.match(/^Date\((\d+),(\d+),(\d+)/);if(m)return`${m[1]}-${String(+m[2]+1).padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);if(!m)return null;let d=+m[1],mo=+m[2];const y=m[3].length==2?2000+ +m[3]:+m[3];if(mo>12&&d<=12)[d,mo]=[mo,d];return`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`},
+ wsIdx=v=>{v=nk(v);if(!v)return null;const i=WS.findIndex(w=>nk(w)==v);if(i>=0)return i;const c=WS.map((w,i)=>[nk(w),i]).filter(([w])=>w.includes(v)||v.includes(w));return c.length==1?c[0][1]:null};
+const viaScript=base=>new Promise((res,rej)=>{const n='gv'+Math.random().toString(36).slice(2),el=document.createElement('script'),end=()=>{clearTimeout(tt);delete window[n];el.remove()},tt=setTimeout(()=>{end();rej(new Error('таблиця закрита для читання або немає зв’язку'))},15000);
+ window[n]=d=>{end();if(!d||d.status!='ok')return rej(new Error((d&&d.errors&&d.errors[0]&&(d.errors[0].detailed_message||d.errors[0].message))||'помилка таблиці'));const t=d.table;
+  res([t.cols.map(c=>c.label||''),...t.rows.map(r=>(r.c||[]).map(c=>c==null?'':typeof c.v=='number'?String(c.v):c.f!=null?c.f:c.v==null?'':String(c.v)))])};
+ el.onerror=()=>{end();rej(new Error('немає зв’язку'))};el.src=base+'&tqx=out:json;responseHandler:'+n;document.head.appendChild(el)});
+async function sheetRows(src,sel){const base=`https://docs.google.com/spreadsheets/d/${src}/gviz/tq?headers=1&`+(sel.sheet!=null?'sheet='+encodeURIComponent(sel.sheet):'gid='+sel.gid);let r;
+ try{const res=await fetch(base+'&tqx=out:csv');if(!res.ok)throw new Error('HTTP '+res.status);const t=(await res.text()).replace(/^\uFEFF/,'');if(/^\s*</.test(t))throw new Error('таблиця закрита для читання');r=csv(t)}
+ catch(e){if(!((e&&e.name=='TypeError')))throw e;r=await viaScript(base)}
+ while(r.length&&r[0].every(x=>cs(x)===''))r.shift();return r}
+async function loadWs(){try{const r=await sheetRows(SRC.ref.id,{sheet:SRC.ref.ws}),a=[];r.forEach((w,i)=>{const n=cs(w[0]);if(!n||(i==0&&nk(n)=='цех')||a.includes(n))return;a.push(n)});if(!a.length)throw new Error('на вкладці «'+SRC.ref.ws+'» немає цехів');
+  WS=S.wsNames=a;if(U.ws>=WS.length)U.ws=0;mg('ws','Цехи: '+a.length+' · '+tm())}catch(e){mg('ws','Цехи не оновлено ('+why(e)+')')}}
+function parseMasters(r){const NM=/майстер|прізвищ|піб|працівник/,hi=r.findIndex(w=>w.some(x=>NM.test(nk(x)))),M=new Map(),get=n=>{const k=nk(n);if(!M.has(k))M.set(k,{id:mid(n),name:cs(n),ws:[]});return M.get(k)},add=(e,k)=>{if(k!==null&&!e.ws.includes(k))e.ws.push(k)};
+ if(hi>=0){const h=r[hi].map(nk),cn=h.findIndex(x=>NM.test(x)),cw=h.findIndex((x,i)=>i!=cn&&/^цех/.test(x)),wc=h.map((x,i)=>[i,wsIdx(x)]).filter(([i,k])=>i!=cn&&i!=cw&&k!==null);
+  r.slice(hi+1).forEach(w=>{const n=cs(w[cn]);if(!n)return;const e=get(n);if(cw>=0)cs(w[cw]).split(/[,;\/\n]+/).forEach(s=>add(e,wsIdx(s)));wc.forEach(([i,k])=>{const v=nk(w[i]);if(v&&!/^(0|-|—|ні|no|false)$/.test(v))add(e,k)})});return[...M.values()]}
+ const hw=r.findIndex(w=>w.some(x=>wsIdx(x)!==null));if(hw<0)return null;
+ r[hw].forEach((x,i)=>{const k=wsIdx(x);if(k===null)return;r.slice(hw+1).forEach(w=>{const n=cs(w[i]);if(n)add(get(n),k)})});return[...M.values()]}
+async function loadMasters(){try{const L=parseMasters(await sheetRows(SRC.ref.id,{sheet:SRC.ref.masters}));if(!L||!L.length)throw new Error('не знайдено майстрів: потрібні стовпці «Майстер» і «Цех» (або стовпці з назвами цехів)');
+  L.forEach(m=>{const o=S.masters.find(x=>nk(x.name)==nk(m.name));if(o)m.id=o.id});S.masters=L;const nw=L.filter(m=>!m.ws.length).length;
+  mg('masters','Майстри: '+L.length+(nw?', без цеху: '+nw:'')+' · '+tm())}catch(e){mg('masters','Майстри не оновлено ('+why(e)+')')}}
+async function loadPlan(){try{const r=await sheetRows(SRC.plan.id,{gid:SRC.plan.gid}),hi=r.findIndex(w=>w.some(x=>/номенклатур/.test(nk(x))));if(hi<0)throw new Error('не знайдено стовпець «Номенклатура»');
+  const h=r[hi].map(nk),c=re=>h.findIndex(x=>re.test(x)),[cw,cd,cn,cc,cq,co,cp]=[c(/^цех/),c(/^дата/),c(/номенклатур/),c(/характеристик/),c(/кільк|колич/),c(/замовлен|заказ/),c(/операці|операци/)];
+  if(cw<0)throw new Error('не знайдено стовпець «Цех»');if(cq<0)throw new Error('не знайдено стовпець «Кількість»');
+  const td=iso(new Date()),m={};let skip=0;
+  r.slice(hi+1).forEach(w=>{const n=cs(w[cn]);if(!n)return;const q=num(w[cq]),ws=wsIdx(w[cw]),d=cd>=0?pdate(w[cd]):td;if(!(q>0)||ws===null||!d){skip++;return}
+   const z={date:d,ws,item:n+'|',char:cc>=0?cs(w[cc]):'',order:co>=0?cs(w[co]):'',op:cp>=0?cs(w[cp]):''},k=[d,ws,n,z.char,z.order,z.op].join('\u0001');(m[k]=m[k]||{...z,qty:0}).qty+=q});
+  const old=S.plan,np=Object.values(m).map(z=>{const o=old.find(x=>same(x,z));if(o){o.qty=z.qty;return o}return{id:id(),...z}});
+  if(!np.length)throw new Error('не знайдено жодного рядка з відомим цехом, датою та кількістю');
+  S.adate=S.adate||{};old.filter(o=>!np.includes(o)).forEach(o=>{delete S.alloc[o.id];delete S.adate[o.id]});S.plan=np;
+  mg('plan','План: '+np.length+' поз.'+(skip?', пропущено '+skip+' (цех не з довідника, немає дати чи кількості)':'')+' · '+tm())}catch(e){mg('plan','План не оновлено ('+why(e)+')'+(S.plan.length?'. Використано збережений: '+S.plan.length+' поз.':''))}}
+async function loadAlloc(){try{const r=await sheetRows(SRC.alloc.id,{gid:SRC.alloc.gid}),hi=r.findIndex(w=>w.some(x=>/номенклатур/.test(nk(x)))&&w.some(x=>/майстер/.test(nk(x))));if(hi<0)throw new Error('не знайдено стовпці «Номенклатура» і «Майстер»');
+  const h=r[hi].map(nk),c=re=>h.findIndex(x=>re.test(x)),[cd,cw,cn,cc,co,cp,cm,cq,ca]=[c(/^дата$/),c(/^цех/),c(/номенклатур/),c(/характеристик/),c(/замовлен|заказ/),c(/операці|операци/),c(/майстер/),c(/кільк|колич/),c(/розподіл|розпод/)],A=[];
+  r.slice(hi+1).forEach(w=>{const n=cs(w[cn]),mn=cs(w[cm]),q=num(w[cq]),ws=wsIdx(w[cw]),d=pdate(w[cd]);if(!n||!mn||!(q>0)||ws===null||!d)return;
+   A.push({date:d,ws,item:n+'|',char:cc>=0?cs(w[cc]):'',order:co>=0?cs(w[co]):'',op:cp>=0?cs(w[cp]):'',mn,q,ad:(ca>=0&&pdate(w[ca]))||d})});
+  S.adate=S.adate||{};let n=0;
+  S.plan.forEach(p=>{const m={};let ad='';A.forEach(a=>{if(same(p,a)&&(p.date>=U.date||a.ad==U.date)){let mm=S.masters.find(x=>nk(x.name)==nk(a.mn));if(!mm){mm={id:mid(a.mn),name:a.mn,ws:[a.ws]};S.masters.push(mm)}m[mm.id]=(m[mm.id]||0)+a.q;ad=a.ad}});if(ad){S.alloc[p.id]=m;S.adate[p.id]=ad;n++}});
+  mg('alloc','Розподіл: '+n+' поз. з '+A.length+' рядків · '+tm())}catch(e){mg('alloc','Розподіл не оновлено ('+why(e)+')')}}
+let busy=null;
+const loadAll=()=>busy||(busy=(async()=>{let d;do{d=U.date;await loadWs();await loadMasters();await loadPlan();await loadAlloc()}while(U.date!=d);S.cat=[...new Set(S.plan.map(p=>p.item))].map(k=>({k}));save();render()})().finally(()=>busy=null));
+document.addEventListener('click',async e=>{const t=e.target.closest('[data-tab],[data-act]');if(!t)return;if(t.dataset.tab){U.tab=t.dataset.tab;return render()}
+ const a=t.dataset.act,i=t.dataset.id;
+ if(a=='addf'){const pl=S.plan.find(x=>x.id==i),c=t.closest('.c'),it=S.cat.find(x=>x.k==pl.item)||{k:pl.item},L=[...c.querySelectorAll('[data-fm]')].map(e=>[e.dataset.fm,+e.value]).filter(x=>x[1]>0);if(!L.length)return alert('Вкажіть, скільки зроблено.');L.forEach(([m,q])=>addFact(it,q,0,m,pl.id))}
+ else if(a=='in')modal(`<h3>Вхід бригадира</h3><input id="pw" type="password" inputmode="numeric" placeholder="Пароль"><button class="pri" data-act="login">Увійти</button><button style="width:100%;margin-top:8px" data-act="shut">Скасувати</button>`)
+ else if(a=='out'){U.role='master';U.tab='home';U.master='';render()}
+ else if(a=='pick'){U.master=i;U.mws=+t.dataset.ws;render()}else if(a=='back'){U.master='';render()}
+ else if(a=='login'){const pw=$('#pw').value;let ok=false,net=false;
+ if(S.server){try{ok=!!(await post({a:'login',pw})).ok;if(ok){S.lastPw=pw;save()}}catch{net=true}}
+ if(!ok&&(net||!S.server||!S.lastPw))ok=S.lastPw?pw==S.lastPw:pw==INIT_PW;
+ if(ok){U.role='brig';U.tab='dist';shut();render()}else alert('Невірний пароль або немає зв’язку.')}
+ else if(a=='sync'){const v=$('#sv');if(v)S.server=v.value.trim();save();await sync()}else if(a=='share')shareRep();else if(a=='copyrt'){const e=$('#rt');e.select();try{document.execCommand('copy');alert('Скопійовано')}catch{}}else if(a=='goto'){U.tab=i;render()}else if(a=='rp'){U.rp=i;render()}else if(a=='alloc')openAlloc(i);else if(a=='sa')saveAlloc(i);else if(a=='shut')shut();else if(a=='delf')delFact(i);else if(a=='close')closeDay();
+ else if(a=='reopen'){delete S.closed[U.date+'|'+U.ws];lg('Зміну відкрито: '+U.date);render()}
+ else if(a=='eq'){const p=S.plan.find(x=>x.id==i),v=prompt('Нова кількість за планом',p.qty);if(v!==null&&+v>=0&&v!==''){lg(`План ${disp(p.item)}: ${p.qty} → ${+v}`);p.qty=+v;render()}}
+ else if(a=='del'){const p=S.plan.find(x=>x.id==i);if(confirm('Видалити із плану?')){S.plan=S.plan.filter(x=>x.id!=i);delete S.alloc[i];lg('Видалено з плану: '+disp(p.item));render()}}
+ else if(a=='addp')modal(`<h3>Додати в план</h3><input id="pi" list="cl2" placeholder="Номенклатура зі довідника"><datalist id="cl2">${S.cat.map(x=>`<option value="${esc(disp(x.k))}">`).join('')}</datalist><input id="pq" type="number" inputmode="numeric" placeholder="Кількість"><button class="pri" data-act="sp">Додати</button><button style="width:100%;margin-top:8px" data-act="shut">Скасувати</button>`)
+ else if(a=='sp'){const it=S.cat.find(x=>disp(x.k).toLowerCase()==$('#pi').value.trim().toLowerCase()),q=+$('#pq').value;if(!it||!(q>0))return alert('Оберіть позицію зі довідника та вкажіть кількість.');
+  const p=S.plan.find(x=>x.date==U.date&&x.ws==U.ws&&x.item==it.k);if(p)p.qty+=q;else S.plan.push({id:id(),date:U.date,ws:U.ws,item:it.k,qty:q});lg(`План +${q}: ${disp(it.k)}`);shut();render()}
+ else if(a=='rs')$('#fbk').click();
+ else if(a=='am'){const n=$('#mn').value.trim(),w=[...document.querySelectorAll('.mw:checked')].map(x=>+x.value);if(!n||!w.length)return alert('Вкажіть прізвище та хоча б один цех.');S.masters.push({id:id(),name:n,ws:w});lg('Додано майстра '+n);render()}
+ else if(a=='dm'){if(confirm('Видалити майстра зі списку?')){S.masters=S.masters.filter(m=>m.id!=i);render()}}
+ else if(a=='clr'){if(confirm('Очистити всі завдання?\n\nБудуть видалені: план, розподіл, випуск, закриті зміни та черга невідправлених записів.\nЗалишаться: довідник, майстри, цехи й адреса сервера.')){S.plan=[];S.alloc={};S.adate={};S.fact=[];S.closed={};S.out=[];lg('Очищено всі завдання');render()}}
+ else if(a=='dm0'){if(confirm('Видалити ВСІ дані й завантажити демо?')){S={cat:[],masters:[],plan:[],alloc:{},fact:[],log:[],closed:{}};demo();render()}}
+ else if(a=='bk'){const l=document.createElement('a');l.href=URL.createObjectURL(new Blob([JSON.stringify(S)],{type:'application/json'}));l.download='backup-'+iso(new Date())+'.json';l.click()}});
+document.addEventListener('change',async e=>{const t=e.target,f=t.files&&t.files[0];
+ if(t.id=='hd'&&t.value){U.date=t.value;render();sync()}else if(t.id=='hw'){U.ws=+t.value;render()}else if(t.id=='hr'){if(t.value=='brig'&&U.role!='brig'){render();modal(`<h3>Вхід бригадира</h3><input id="pw" type="password" inputmode="numeric" placeholder="Пароль"><button class="pri" data-act="login">Увійти</button><button style="width:100%;margin-top:8px" data-act="shut">Скасувати</button>`)}else{U.role=t.value;render()}}else if(t.id=='hm'){U.master=t.value;render()}
+ else if(f&&t.id=='fbk'){try{const d=JSON.parse(await f.text());if(!d.cat||!d.plan)throw 0;S=d;save();lg('Відновлено з копії');render()}catch{alert('Файл не схожий на резервну копію.')}t.value=''}});
+document.addEventListener('input',e=>{if(e.target.dataset&&e.target.dataset.m)$('#sm').textContent=sum([...document.querySelectorAll('#mb [data-m]')].map(x=>+x.value||0))});
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+render();sync();
+</script></body></html>
